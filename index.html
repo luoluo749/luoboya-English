@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>今日复习计划（多课程多TXT导出版）</title>
+    <style>
+        body { font-family: 微软雅黑; padding: 20px; background-color: #f9f3e9; margin: 0; }
+        .box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px #ddd; max-width: 800px; margin: 0 auto; }
+        h1 { color: #e67e22; text-align: center; font-size: 24px; margin-top: 0; }
+        .today-review { background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+        .today-title { color: #856404; font-weight: bold; margin-bottom: 10px; font-size: 16px; }
+        .today-item { color: #721c24; margin: 5px 0; font-size: 15px; }
+        .no-today { color: #6c757d; font-size: 14px; }
+        .input-area { margin: 20px 0; padding: 15px; background: #fef5e7; border-radius: 8px; }
+        input, textarea { padding: 10px; margin: 10px 5px; border: 2px solid #e67e22; border-radius: 5px; box-sizing: border-box; }
+        #planName { width: 300px; }
+        #startDate { width: 200px; }
+        #wordInput { width: 500px; height: 100px; resize: none; }
+        button { padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 5px; transition: background 0.3s; }
+        button:hover { background: #d35400; }
+        .plan-item { margin: 15px 0; padding: 15px; background: #fef5e7; border-radius: 8px; border-left: 4px solid #e67e22; }
+        .review-day { margin: 6px 0; color: #333; font-size: 14px; }
+        .title { color: #e67e22; font-weight: bold; margin-bottom: 10px; font-size: 16px; }
+        .tip { color: #666; font-size: 13px; margin-top: 10px; }
+        .word-card { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 0 5px #ddd; margin: 10px 0; text-align: center; }
+        .word-eng { font-size: 20px; font-weight: bold; color: #e67e22; }
+        .word-cn { font-size: 16px; color: #666; margin: 5px 0; }
+        .mastery-btn { margin: 0 8px; padding: 8px 15px; background: #3498db; }
+        .mastery-btn:nth-child(2) { background: #e74c3c; }
+        .mastery-btn:last-child { background: #6c757d; }
+        .mastered { text-decoration: line-through; color: #28a745; }
+        .unmastered { color: #dc3545; }
+        /* 弹窗样式 */
+        #wordReviewModal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.3); z-index: 1000; min-width: 300px; }
+        /* 导出选择弹窗 */
+        #exportSelectModal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.3); z-index: 1000; min-width: 400px; max-height: 70vh; overflow-y: auto; }
+        .export-plan-item { margin: 10px 0; padding: 10px; background: #fef5e7; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>今日复习+10次计划（多TXT导出版）</h1>
+
+        <!-- 今日复习区 -->
+        <div class="today-review">
+            <div class="today-title">📅 今天（<span id="localToday"></span>）要复习的内容：</div>
+            <div id="todayReviewList" class="no-today">正在加载复习计划...</div>
+        </div>
+
+        <!-- 核心操作区 -->
+        <div class="input-area">
+            <h3>1. 手动添加课程计划</h3>
+            <p>课程名称（如“五年级数学第1章”）：</p>
+            <input type="text" id="planName" placeholder="必填：输入课程名" required>
+            <p>开始学习日期：</p>
+            <input type="date" id="startDate" required>
+            <p>单词（每行1组：英文+空格+中文，无则不填）：</p>
+            <textarea id="wordInput" placeholder="示例：apple 苹果&#10;banana 香蕉"></textarea>
+            <br>
+            <button onclick="addNewPlan()">添加计划（单词存本地）</button>
+
+            <h3 style="margin-top: 20px;">2. 导出TXT（可选择课程）</h3>
+            <p class="tip">提示：点击后可选择要导出的课程</p>
+            <button onclick="showExportSelectModal()">选择课程并导出TXT</button>
+        </div>
+
+        <!-- 课程计划展示区 -->
+        <div id="allPlans"></div>
+
+        <!-- 单词复习弹窗（默认隐藏） -->
+        <div id="wordReviewModal">
+            <div class="word-card">
+                <div class="word-eng" id="currentWordEng"></div>
+                <div class="word-cn" id="currentWordCn"></div>
+                <div class="tip" id="wordProgress"></div>
+            </div>
+            <button class="mastery-btn" onclick="recordMastery(true)">✅ 认识</button>
+            <button class="mastery-btn" onclick="recordMastery(false)">❌ 不认识</button>
+            <button class="mastery-btn" onclick="closeWordModal()">关闭</button>
+        </div>
+
+        <!-- 导出选择弹窗（默认隐藏） -->
+        <div id="exportSelectModal">
+            <h2>选择要导出的课程</h2>
+            <div id="exportPlanList"></div>
+            <button onclick="exportSelectedPlans()">确认导出</button>
+            <button onclick="closeExportModal()">取消</button>
+        </div>
+    </div>
+
+    <script>
+        // 基础配置
+        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（固定）
+        const PLAN_KEY = "reviewPlansWithLocalCache"; // 本地缓存键名（动态数据存这里）
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // 清除时分秒，确保日期对比准确
+        const todayStr = getLocalDateStr(today);
+        // 复习弹窗状态
+        let currentReviewPlan = null;
+        let currentWordIndex = 0;
+
+        // 1. 工具函数：日期格式化（YYYY-MM-DD）
+        function getLocalDateStr(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+            return `${year}-${month}-${day}`;
+        }
+
+        // 2. 页面初始化：加载本地缓存的动态数据
+        window.onload = () => {
+            document.getElementById('localToday').textContent = todayStr;
+            loadActivePlans(); // 只加载未过期的计划
+        };
+
+        // 3. 功能1：手动添加课程计划（动态数据存本地缓存）
+        function addNewPlan() {
+            const planName = document.getElementById("planName").value.trim();
+            const startDate = document.getElementById("startDate").value;
+            const wordInput = document.getElementById("wordInput").value.trim();
+
+            // 基础校验
+            if (!planName || !startDate) {
+                alert("课程名和开始日期不能为空！");
+                return;
+            }
+
+            // 解析单词（仅存英文+中文，初始状态为“未复习”，存本地）
+            const words = [];
+            if (wordInput) {
+                wordInput.split('\n').forEach(line => {
+                    line = line.trim();
+                    if (!line) return;
+                    const [eng, ...cnParts] = line.split(' ');
+                    const cn = cnParts.join(' ').trim();
+                    if (eng && cn) {
+                        words.push({ eng, cn, isMastered: null }); // isMastered：null未复习/true认识/false不认识（仅本地）
+                    }
+                });
+            }
+
+            // 生成10次复习日期（静态，导出时会包含）
+            const startDateObj = new Date(startDate);
+            startDateObj.setHours(0, 0, 0, 0);
+            const firstReviewDate = new Date(startDateObj);
+            firstReviewDate.setDate(firstReviewDate.getDate() + 1); // 第一次复习在开始日期后1天
+
+            const newPlan = {
+                id: Date.now(), // 唯一ID（避免重复）
+                name: planName,
+                startDate: startDate,
+                reviews: reviewIntervals.map((interval, i) => {
+                    const reviewDate = new Date(firstReviewDate);
+                    reviewDate.setDate(reviewDate.getDate() + (i === 0 ? 0 : interval - reviewIntervals[i-1]));
+                    return {
+                        times: i + 1,
+                        date: getLocalDateStr(reviewDate),
+                        interval: interval,
+                        wordMastery: [] // 复习记录（仅本地，不导出）
+                    };
+                }),
+                words: words // 单词列表（导出时仅含eng+cn，不含isMastered）
+            };
+
+            // 保存到本地缓存
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            allPlans.push(newPlan);
+            localStorage.setItem(PLAN_KEY, JSON.stringify(allPlans));
+
+            // 刷新页面展示
+            loadActivePlans();
+            clearInput();
+            alert(`"${planName}"计划添加成功！动态数据已存本地缓存`);
+        }
+
+        // 4. 功能2：单词复习（动态状态存本地，不导出）
+        function startWordReview(planId) {
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            currentReviewPlan = allPlans.find(p => p.id === planId);
+            if (!currentReviewPlan || currentReviewPlan.words.length === 0) {
+                alert("该课程没有单词可复习！");
+                return;
+            }
+
+            currentWordIndex = 0;
+            showCurrentWord();
+            document.getElementById("wordReviewModal").style.display = "block";
+        }
+
+        // 辅助：展示当前复习的单词
+        function showCurrentWord() {
+            const words = currentReviewPlan.words;
+            if (currentWordIndex >= words.length) {
+                alert("所有单词复习完毕！动态记录已存本地～");
+                closeWordModal();
+                return;
+            }
+
+            const currentWord = words[currentWordIndex];
+            document.getElementById("currentWordEng").textContent = currentWord.eng;
+            document.getElementById("currentWordCn").textContent = currentWord.cn;
+            document.getElementById("wordProgress").textContent = `进度：${currentWordIndex + 1}/${words.length}`;
+        }
+
+        // 辅助：记录单词掌握状态（存本地）
+        function recordMastery(isMastered) {
+            const currentWord = currentReviewPlan.words[currentWordIndex];
+            currentWord.isMastered = isMastered;
+
+            // 记录到今日复习记录（仅本地）
+            const todayReview = currentReviewPlan.reviews.find(r => r.date === todayStr);
+            if (todayReview) {
+                todayReview.wordMastery.push({
+                    wordEng: currentWord.eng,
+                    isMastered: isMastered,
+                    reviewTime: new Date().toLocaleTimeString()
+                });
+            }
+
+            // 保存到本地缓存
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            const planIndex = allPlans.findIndex(p => p.id === currentReviewPlan.id);
+            if (planIndex !== -1) {
+                allPlans[planIndex] = currentReviewPlan;
+                localStorage.setItem(PLAN_KEY, JSON.stringify(allPlans));
+            }
+
+            // 下一个单词
+            currentWordIndex++;
+            showCurrentWord();
+        }
+
+        // 辅助：关闭复习弹窗
+        function closeWordModal() {
+            document.getElementById("wordReviewModal").style.display = "none";
+            currentReviewPlan = null;
+            currentWordIndex = 0;
+            loadActivePlans(); // 刷新计划展示（更新本地状态）
+        }
+
+        // 5. 功能3：显示导出选择弹窗
+        function showExportSelectModal() {
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            const activePlans = allPlans.filter(plan => {
+                const lastReviewDate = new Date(plan.reviews[plan.reviews.length - 1].date);
+                return lastReviewDate >= today;
+            });
+
+            if (activePlans.length === 0) {
+                alert("没有未过期的课程可导出！");
+                return;
+            }
+
+            const exportPlanList = document.getElementById("exportPlanList");
+            exportPlanList.innerHTML = "";
+
+            // 生成课程选择列表
+            activePlans.forEach(plan => {
+                const planItem = document.createElement("div");
+                planItem.className = "export-plan-item";
+                planItem.innerHTML = `
+                    <input type="checkbox" id="export_${plan.id}" value="${plan.id}">
+                    <label for="export_${plan.id}">${plan.name}（开始：${plan.startDate}）</label>
+                `;
+                exportPlanList.appendChild(planItem);
+            });
+
+            // 显示弹窗
+            document.getElementById("exportSelectModal").style.display = "block";
+        }
+
+        // 功能4：导出选中的课程
+        function exportSelectedPlans() {
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            const checkboxes = document.querySelectorAll('#exportPlanList input[type="checkbox"]:checked');
+            const selectedPlanIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+            
+            if (selectedPlanIds.length === 0) {
+                alert("请至少选择一个课程！");
+                return;
+            }
+
+            // 导出每个选中的课程
+            selectedPlanIds.forEach(planId => {
+                const plan = allPlans.find(p => p.id === planId);
+                if (!plan) return;
+
+                // 构建TXT内容
+                let txtContent = `=== 课程基础信息 ===\n`;
+                txtContent += `课程名：${plan.name}\n`;
+                txtContent += `开始日期：${plan.startDate}\n`;
+                txtContent += `总复习次数：10次（按艾宾浩斯间隔）\n\n`;
+
+                txtContent += `=== 10次复习安排（静态计划） ===\n`;
+                plan.reviews.forEach(review => {
+                    txtContent += `第${review.times}次复习：${review.date}（距开始第${review.interval}天）\n`;
+                });
+
+                txtContent += `\n=== 单词列表（仅基础信息） ===\n`;
