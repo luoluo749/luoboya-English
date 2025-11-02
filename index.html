@@ -55,7 +55,7 @@
     </div>
 
     <script>
-        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔
+        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（从开始日算起的天数）
         const PLAN_KEY = "reviewPlans";
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -100,24 +100,22 @@
                 });
             }
 
-            // 生成10次复习日期
+            // 生成10次复习日期 - 修复版逻辑
             const startDateObj = new Date(startDate);
             startDateObj.setHours(0, 0, 0, 0);
-            const firstReviewDate = new Date(startDateObj);
-            firstReviewDate.setDate(firstReviewDate.getDate() + 1);
 
             const newPlan = {
                 id: Date.now(),
                 name: planName,
                 startDate: startDate,
                 words: words,
-                reviews: reviewIntervals.map((interval, i) => {
-                    const reviewDate = new Date(firstReviewDate);
-                    reviewDate.setDate(reviewDate.getDate() + (i === 0 ? 0 : interval - reviewIntervals[i-1]));
+                reviews: reviewIntervals.map((daysFromStart, i) => {
+                    const reviewDate = new Date(startDateObj);
+                    reviewDate.setDate(reviewDate.getDate() + daysFromStart); // 直接在开始日期上加天数
                     return {
                         times: i + 1,
                         date: getLocalDateStr(reviewDate),
-                        interval: interval
+                        interval: daysFromStart
                     };
                 })
             };
@@ -160,7 +158,7 @@
                     let statusStyle = "";
                     if (isToday) statusStyle = "color:#e67e22;font-weight:bold";
                     if (isPast) statusStyle = "color:#6c757d;text-decoration:line-through";
-                    reviewHtml += `<div class="review-day"><span style="${statusStyle}">第${review.times}次：${review.date}</span>（间隔${review.interval}天）</div>`;
+                    reviewHtml += `<div class="review-day"><span style="${statusStyle}">第${review.times}次：${review.date}</span>（距开始第${review.interval}天）</div>`;
                 });
 
                 let wordInfo = "";
@@ -219,7 +217,7 @@
 
                 txtContent += `10次复习安排：\n`;
                 plan.reviews.forEach(review => {
-                    txtContent += `  第${review.times}次：${review.date}（间隔${review.interval}天）\n`;
+                    txtContent += `  第${review.times}次：${review.date}（距开始第${review.interval}天）\n`;
                 });
 
                 if (plan.words.length > 0) {
