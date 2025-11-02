@@ -12,15 +12,17 @@
         .today-item { color: #721c24; margin: 5px 0; font-size: 15px; }
         .no-today { color: #6c757d; font-size: 14px; }
         .input-area { margin: 20px 0; padding: 15px; background: #fef5e7; border-radius: 8px; }
-        select, textarea { padding: 10px; margin: 10px 5px; border: 2px solid #e67e22; border-radius: 5px; box-sizing: border-box; }
-        #courseFileSelect { width: 350px; }
+        input, textarea { padding: 10px; margin: 10px 5px; border: 2px solid #e67e22; border-radius: 5px; box-sizing: border-box; }
+        #courseName { width: 250px; }
+        #startDate { width: 180px; }
+        #wordList { width: 95%; height: 120px; resize: none; }
         button { padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 5px; transition: background 0.3s; }
         button:hover { background: #d35400; }
         .plan-item { margin: 15px 0; padding: 15px; background: #fef5e7; border-radius: 8px; border-left: 4px solid #e67e22; }
         .review-day { margin: 6px 0; color: #333; font-size: 14px; }
         .title { color: #e67e22; font-weight: bold; margin-bottom: 10px; font-size: 16px; }
         .tip { color: #666; font-size: 13px; margin-top: 10px; }
-        .file-tip { color: #999; font-size: 12px; margin: 5px 0 0 8px; }
+        .load-status { text-align: center; color: #6c757d; margin: 15px 0; }
     </style>
 </head>
 <body>
@@ -30,42 +32,44 @@
         <!-- 今日复习区 -->
         <div class="today-review">
             <div class="today-title">📅 今天（<span id="localToday"></span>）要复习的内容：</div>
-            <div id="todayReviewList" class="no-today">正在加载课程计划...</div>
+            <div id="todayReviewList" class="no-today">正在加载服务器课程...</div>
         </div>
 
-        <!-- 核心操作区（改为选择服务器课程文件） -->
+        <!-- 1. 手动添加课程区（保留） -->
         <div class="input-area">
-            <h3>1. 加载服务器课程文件</h3>
-            <p>选择课程文件（来自 ./course/ 目录）：</p>
-            <select id="courseFileSelect" required>
-                <option value="">-- 请先加载课程文件列表 --</option>
-            </select>
-            <button onclick="loadCourseFiles()">加载服务器课程列表</button>
-            <p class="file-tip">提示：服务器 ./course/ 目录下的TXT文件需按格式编写：第1行课程名，第2行开始日期（YYYY-MM-DD），第3行起为单词（英文 中文）</p>
-            <br>
-            <button onclick="loadSelectedCourse()" disabled>加载选中课程</button>
+            <h3>1. 手动添加新课程</h3>
+            <p>课程名：<input type="text" id="courseName" placeholder="如：五年级数学第一章" required></p>
+            <p>开始日期：<input type="date" id="startDate" required></p>
+            <p>单词/知识点（每行一个，格式：内容 解释）：<br>
+                <textarea id="wordList" placeholder="例：加法交换律 a+b=b+a&#10;平行四边形 两组对边分别平行的四边形"></textarea>
+            </p>
+            <button onclick="addManualCourse()">添加课程并生成计划</button>
+            <button onclick="clearManualInput()">清空输入</button>
         </div>
 
-        <!-- 课程计划展示区（含单课程导出按钮） -->
+        <!-- 2. 服务器课程加载状态 -->
+        <div class="load-status" id="serverLoadStatus">正在自动加载服务器课程...</div>
+
+        <!-- 3. 所有课程计划展示区（含下载TXT按钮） -->
         <div id="allPlans"></div>
     </div>
 
     <script>
-        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（从开始日算起）
-        const SERVER_COURSE_DIR = "./course/"; // 服务器课程文件根目录
+        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（天）
+        const SERVER_COURSE_DIR = "./course/"; // 服务器课程文件夹路径（固定）
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayStr = getLocalDateStr(today);
-        let currentCourses = []; // 存储当前加载的课程列表
+        let allCourses = []; // 存储所有课程（手动添加 + 服务器加载）
 
-        // 页面加载时显示今日日期
+        // 页面加载时执行：显示今日日期 + 自动加载服务器所有课程
         window.onload = () => {
             document.getElementById('localToday').textContent = todayStr;
-            // 初始加载服务器课程列表
-            loadCourseFiles();
+            document.getElementById('startDate').value = todayStr; // 默认开始日期为今天
+            autoLoadServerCourses(); // 自动加载服务器课程
         };
 
-        // 日期格式化工具
+        /** 工具函数：日期格式化（YYYY-MM-DD） */
         function getLocalDateStr(date) {
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -73,238 +77,254 @@
             return `${year}-${month}-${day}`;
         }
 
-        /**
-         * 加载服务器 ./course/ 目录下的所有TXT文件列表
-         * 注：需后端配合返回文件列表（此处模拟逻辑，实际需后端接口支持）
-         */
-        function loadCourseFiles() {
-            const selectElement = document.getElementById("courseFileSelect");
-            const loadBtn = document.querySelector("button[onclick='loadSelectedCourse()']");
+        /** 核心1：自动加载服务器course文件夹下所有TXT课程 */
+        function autoLoadServerCourses() {
+            const loadStatus = document.getElementById('serverLoadStatus');
             
-            // 实际项目中，需替换为后端接口请求（如 /api/getCourseFiles）
-            // 此处模拟获取服务器TXT文件列表（示例文件名）
-            fetch(SERVER_COURSE_DIR + "fileList.json") // 假设后端提供文件列表JSON
+            // 关键：请求后端接口获取course文件夹下所有TXT文件名（需后端配合）
+            // 后端需提供接口（如/getAllCourseFiles），返回格式：["数学.txt","英语.txt"]
+            fetch('/getAllCourseFiles') 
                 .then(res => {
-                    if (!res.ok) throw new Error("无法获取课程文件列表");
+                    if (!res.ok) throw new Error(`接口请求失败（${res.status}）`);
                     return res.json();
                 })
-                .then(fileList => {
-                    // 过滤出TXT文件
-                    const txtFiles = fileList.filter(file => file.endsWith(".txt"));
-                    if (txtFiles.length === 0) {
-                        selectElement.innerHTML = "<option value=''>-- 服务器目录下无TXT课程文件 --</option>";
-                        loadBtn.disabled = true;
+                .then(txtFileNames => {
+                    if (txtFileNames.length === 0) {
+                        loadStatus.textContent = "服务器course文件夹下暂无TXT课程文件";
+                        renderAllCourses(); // 渲染已有手动课程（若有）
                         return;
                     }
 
-                    // 填充下拉框
-                    selectElement.innerHTML = "<option value=''>-- 请选择课程文件 --</option>";
-                    txtFiles.forEach(file => {
-                        const option = document.createElement("option");
-                        option.value = file;
-                        option.textContent = file.replace(".txt", ""); // 显示时去掉后缀
-                        selectElement.appendChild(option);
+                    // 批量加载每个TXT课程
+                    let loadedCount = 0;
+                    txtFileNames.forEach(fileName => {
+                        fetch(SERVER_COURSE_DIR + fileName)
+                            .then(res => {
+                                if (!res.ok) throw new Error(`文件${fileName}加载失败`);
+                                return res.text();
+                            })
+                            .then(txtContent => {
+                                // 解析TXT内容（按约定格式：第1行课程名，第2行开始日期，第3行起内容）
+                                const lines = txtContent.split('\n').map(line => line.trim()).filter(line => line);
+                                if (lines.length < 2) throw new Error(`文件${fileName}格式错误`);
+
+                                // 提取课程信息
+                                const courseName = lines[0];
+                                const startDate = lines[1];
+                                if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error(`文件${fileName}日期格式错误`);
+                                
+                                // 提取知识点
+                                const contents = [];
+                                for (let i = 2; i < lines.length; i++) {
+                                    const [content, ...descParts] = lines[i].split(' ');
+                                    const desc = descParts.join(' ').trim();
+                                    if (content && desc) contents.push({ content, desc });
+                                }
+
+                                // 生成课程计划并加入列表（去重：同文件名不重复加）
+                                const course = {
+                                    id: `server_${fileName}`, // 服务器课程ID（含文件名，避免重复）
+                                    type: 'server', // 标记为服务器课程
+                                    fileName: fileName,
+                                    name: courseName,
+                                    startDate: startDate,
+                                    contents: contents,
+                                    reviews: getReviewDates(startDate) // 生成10次复习日期
+                                };
+
+                                // 去重：若已加载过该文件，替换；否则新增
+                                const existingIndex = allCourses.findIndex(c => c.id === course.id);
+                                if (existingIndex > -1) {
+                                    allCourses[existingIndex] = course;
+                                } else {
+                                    allCourses.push(course);
+                                }
+
+                                loadedCount++;
+                                // 所有文件加载完成后更新状态和渲染
+                                if (loadedCount === txtFileNames.length) {
+                                    loadStatus.textContent = `已自动加载服务器${loadedCount}个TXT课程`;
+                                    renderAllCourses();
+                                }
+                            })
+                            .catch(err => {
+                                loadStatus.textContent += ` | ${err.message}`;
+                                loadedCount++;
+                                if (loadedCount === txtFileNames.length) renderAllCourses();
+                            });
                     });
-                    loadBtn.disabled = false;
                 })
                 .catch(err => {
-                    selectElement.innerHTML = `<option value=''>-- 加载失败：${err.message} --</option>`;
-                    loadBtn.disabled = true;
-                    alert("加载课程列表失败：" + err.message);
+                    loadStatus.textContent = `服务器课程加载失败：${err.message}`;
+                    renderAllCourses();
                 });
         }
 
-        /**
-         * 加载选中的服务器课程文件（解析TXT内容）
-         */
-        function loadSelectedCourse() {
-            const selectElement = document.getElementById("courseFileSelect");
-            const selectedFile = selectElement.value;
-            if (!selectedFile) {
-                alert("请先选择一个课程文件！");
-                return;
+        /** 核心2：手动添加课程 */
+        function addManualCourse() {
+            const courseName = document.getElementById('courseName').value.trim();
+            const startDate = document.getElementById('startDate').value;
+            const wordListText = document.getElementById('wordList').value.trim();
+
+            // 验证输入
+            if (!courseName) { alert("请输入课程名！"); return; }
+            if (!startDate) { alert("请选择开始日期！"); return; }
+
+            // 解析手动输入的知识点
+            const contents = [];
+            if (wordListText) {
+                const lines = wordListText.split('\n').map(line => line.trim()).filter(line => line);
+                lines.forEach(line => {
+                    const [content, ...descParts] = line.split(' ');
+                    const desc = descParts.join(' ').trim();
+                    if (content && desc) {
+                        contents.push({ content, desc });
+                    } else {
+                        alert(`“${line}”格式错误，需按“内容 解释”填写，已跳过该行`);
+                    }
+                });
             }
 
-            // 请求服务器上的TXT课程文件
-            fetch(SERVER_COURSE_DIR + selectedFile)
-                .then(res => {
-                    if (!res.ok) throw new Error("文件不存在或无法访问");
-                    return res.text();
-                })
-                .then(txtContent => {
-                    // 解析TXT内容（按约定格式：第1行课程名，第2行开始日期，第3行起单词）
-                    const lines = txtContent.split('\n').map(line => line.trim()).filter(line => line);
-                    if (lines.length < 2) {
-                        throw new Error("文件格式错误：至少需包含课程名和开始日期");
-                    }
+            // 生成手动课程（ID用时间戳，避免重复）
+            const manualCourse = {
+                id: `manual_${Date.now()}`, // 手动课程ID（时间戳）
+                type: 'manual', // 标记为手动课程
+                fileName: `${courseName}_${todayStr}.txt`, // 下载时的默认文件名
+                name: courseName,
+                startDate: startDate,
+                contents: contents,
+                reviews: getReviewDates(startDate) // 生成10次复习日期
+            };
 
-                    const courseName = lines[0];
-                    const startDate = lines[1];
-                    // 验证开始日期格式
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-                        throw new Error("开始日期格式错误：需为 YYYY-MM-DD（如 2024-10-06）");
-                    }
-
-                    // 解析单词（第3行起）
-                    const words = [];
-                    for (let i = 2; i < lines.length; i++) {
-                        const [eng, ...cnParts] = lines[i].split(' ');
-                        const cn = cnParts.join(' ').trim();
-                        if (eng && cn) {
-                            words.push({ eng, cn });
-                        }
-                    }
-
-                    // 生成课程计划
-                    const startDateObj = new Date(startDate);
-                    startDateObj.setHours(0, 0, 0, 0);
-                    const newCourse = {
-                        id: Date.now(),
-                        fileName: selectedFile,
-                        name: courseName,
-                        startDate: startDate,
-                        words: words,
-                        reviews: reviewIntervals.map((daysFromStart, i) => {
-                            const reviewDate = new Date(startDateObj);
-                            reviewDate.setDate(reviewDate.getDate() + daysFromStart);
-                            return {
-                                times: i + 1,
-                                date: getLocalDateStr(reviewDate),
-                                interval: daysFromStart
-                            };
-                        })
-                    };
-
-                    // 更新当前课程列表（去重：同一文件不重复加载）
-                    currentCourses = currentCourses.filter(course => course.fileName !== selectedFile);
-                    currentCourses.push(newCourse);
-                    // 刷新页面显示
-                    renderCoursePlans();
-                    alert(`成功加载课程：${courseName}`);
-                })
-                .catch(err => {
-                    alert("加载课程失败：" + err.message);
-                });
+            // 添加到课程列表并渲染
+            allCourses.unshift(manualCourse); // 手动课程放最前面
+            renderAllCourses();
+            alert(`成功添加课程：${courseName}`);
+            clearManualInput(); // 清空输入框
         }
 
-        /**
-         * 渲染课程计划（含单课程导出按钮）
-         */
-        function renderCoursePlans() {
-            const allPlansContainer = document.getElementById("allPlans");
+        /** 工具函数：生成10次复习日期 */
+        function getReviewDates(startDateStr) {
+            const startDate = new Date(startDateStr);
+            startDate.setHours(0, 0, 0, 0);
+            return reviewIntervals.map((days, index) => {
+                const reviewDate = new Date(startDate);
+                reviewDate.setDate(reviewDate.getDate() + days);
+                return {
+                    times: index + 1,
+                    date: getLocalDateStr(reviewDate),
+                    interval: days
+                };
+            });
+        }
+
+        /** 核心3：渲染所有课程（手动 + 服务器） */
+        function renderAllCourses() {
+            const allPlansContainer = document.getElementById('allPlans');
             allPlansContainer.innerHTML = "";
 
-            if (currentCourses.length === 0) {
-                allPlansContainer.innerHTML = `<p class="no-today">暂无加载的课程计划，请选择并加载服务器课程文件</p>`;
-                updateTodayReviewList();
+            if (allCourses.length === 0) {
+                allPlansContainer.innerHTML = `<p class="no-today">暂无课程，可手动添加或在服务器course文件夹放TXT课程</p>`;
+                updateTodayReview();
                 return;
             }
 
-            // 更新今日复习列表
-            updateTodayReviewList();
-
-            // 渲染每个课程计划（新增「导出本课程」按钮）
-            currentCourses.forEach(course => {
+            // 遍历渲染每个课程
+            allCourses.forEach(course => {
                 const planItem = document.createElement("div");
                 planItem.className = "plan-item";
+
+                // 渲染课程来源（服务器/手动）
+                const sourceTip = course.type === 'server' 
+                    ? `（来自服务器：${course.fileName}）` 
+                    : `（手动添加）`;
 
                 // 渲染复习日期（标记今日/已过期）
                 let reviewHtml = "";
                 course.reviews.forEach(review => {
                     const isToday = review.date === todayStr;
                     const isPast = new Date(review.date) < today;
-                    let statusStyle = "";
-                    if (isToday) statusStyle = "color:#e67e22;font-weight:bold";
-                    if (isPast) statusStyle = "color:#6c757d;text-decoration:line-through";
-                    reviewHtml += `<div class="review-day"><span style="${statusStyle}">第${review.times}次：${review.date}</span>（距开始第${review.interval}天）</div>`;
+                    const style = isToday ? "color:#e67e22;font-weight:bold" : (isPast ? "color:#6c757d;text-decoration:line-through" : "");
+                    reviewHtml += `<div class="review-day"><span style="${style}">第${review.times}次：${review.date}</span>（距开始第${review.interval}天）</div>`;
                 });
 
-                // 渲染单词信息
-                let wordHtml = "";
-                if (course.words.length > 0) {
-                    wordHtml = `<div class="tip">单词列表（共${course.words.length}个）：<br>${course.words.map(w => `• ${w.eng} - ${w.cn}`).join('<br>')}</div>`;
+                // 渲染知识点
+                let contentHtml = "";
+                if (course.contents.length > 0) {
+                    contentHtml = `<div class="tip">知识点（共${course.contents.length}个）：<br>${course.contents.map(c => `• ${c.content} - ${c.desc}`).join('<br>')}</div>`;
                 } else {
-                    wordHtml = `<div class="tip">本课程未添加单词</div>`;
+                    contentHtml = `<div class="tip">本课程暂无知识点</div>`;
                 }
 
-                // 新增「导出本课程」按钮
+                // 渲染课程卡片（含下载TXT按钮）
                 planItem.innerHTML = `
-                    <div class="title">📚 ${course.name}（文件：${course.fileName} | 开始日期：${course.startDate}）</div>
+                    <div class="title">📚 ${course.name} ${sourceTip} | 开始日期：${course.startDate}</div>
                     <div>${reviewHtml}</div>
-                    ${wordHtml}
-                    <button onclick="exportSingleCourse(${course.id})" style="margin-top:10px;">导出本课程计划</button>
+                    ${contentHtml}
+                    <button onclick="downloadCourseTxt('${course.id}')" style="margin-top:10px;">下载本课程TXT（可上传到服务器）</button>
                 `;
                 allPlansContainer.appendChild(planItem);
             });
+
+            // 更新今日复习列表
+            updateTodayReview();
         }
 
-        /**
-         * 单课程导出（仅导出选中的单个课程）
-         */
-        function exportSingleCourse(courseId) {
-            const course = currentCourses.find(c => c.id === courseId);
-            if (!course) {
-                alert("未找到该课程，无法导出！");
-                return;
-            }
+        /** 核心4：下载课程为TXT（供用户上传到服务器） */
+        function downloadCourseTxt(courseId) {
+            const course = allCourses.find(c => c.id === courseId);
+            if (!course) { alert("课程不存在！"); return; }
 
-            // 构建导出内容
-            let txtContent = `=== 艾宾浩斯复习计划 - ${course.name} ===\n`;
-            txtContent += `课程文件：${course.fileName}\n`;
-            txtContent += `开始日期：${course.startDate}\n`;
-            txtContent += `导出日期：${new Date().toLocaleDateString()}\n\n`;
-
-            txtContent += `10次复习安排：\n`;
-            course.reviews.forEach(review => {
-                txtContent += `  第${review.times}次：${review.date}（距开始第${review.interval}天）\n`;
+            // 按约定格式生成TXT内容（确保上传到服务器后能被正确解析）
+            let txtContent = `=== 艾宾浩斯复习课程 - ${course.name} ===\n`;
+            txtContent += `${course.name}\n`; // 第1行：课程名
+            txtContent += `${course.startDate}\n`; // 第2行：开始日期
+            txtContent += `\n# 知识点列表（共${course.contents.length}个）\n`;
+            course.contents.forEach(item => {
+                txtContent += `${item.content} ${item.desc}\n`; // 第3行起：知识点
             });
 
-            if (course.words.length > 0) {
-                txtContent += `\n单词列表：\n`;
-                course.words.forEach(word => {
-                    txtContent += `  ${word.eng} ${word.cn}\n`;
-                });
-            } else {
-                txtContent += `\n单词列表：无\n`;
-            }
-
-            // 下载TXT文件
+            // 下载文件
             const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
-            const exportFileName = `${course.name}_复习计划_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
             a.href = url;
-            a.download = exportFileName;
+            a.download = course.fileName; // 文件名（手动课程：课程名+日期；服务器课程：原文件名）
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            alert(`已成功导出课程：《${course.name}》`);
+            alert(`已下载TXT文件：${course.fileName}\n可直接上传到服务器course文件夹`);
         }
 
-        /**
-         * 更新今日复习列表
-         */
-        function updateTodayReviewList() {
-            const todayReviewList = document.getElementById("todayReviewList");
-            const todayCourses = currentCourses.filter(course => 
+        /** 辅助：清空手动输入框 */
+        function clearManualInput() {
+            document.getElementById('courseName').value = "";
+            document.getElementById('startDate').value = todayStr;
+            document.getElementById('wordList').value = "";
+        }
+
+        /** 辅助：更新今日复习列表 */
+        function updateTodayReview() {
+            const todayList = document.getElementById('todayReviewList');
+            const todayNeedReview = allCourses.filter(course => 
                 course.reviews.some(review => review.date === todayStr)
             );
 
-            if (todayCourses.length === 0) {
-                todayReviewList.innerHTML = "今日暂无复习任务，好好休息吧！";
-                todayReviewList.className = "no-today";
+            if (todayNeedReview.length === 0) {
+                todayList.innerHTML = "今日暂无复习任务，好好休息吧！";
+                todayList.className = "no-today";
                 return;
             }
 
-            todayReviewList.className = "";
-            let todayHtml = "";
-            todayCourses.forEach(course => {
+            todayList.className = "";
+            let html = "";
+            todayNeedReview.forEach(course => {
                 const reviewTimes = course.reviews.find(r => r.date === todayStr).times;
-                todayHtml += `<div class="today-item">• ${course.name}（第${reviewTimes}次复习）</div>`;
+                html += `<div class="today-item">• ${course.name}（第${reviewTimes}次复习）</div>`;
             });
-            todayReviewList.innerHTML = todayHtml;
+            todayList.innerHTML = html;
         }
     </script>
 </body>
