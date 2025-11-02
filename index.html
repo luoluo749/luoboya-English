@@ -50,7 +50,7 @@
         <!-- 核心操作区 -->
         <div class="input-area">
             <h3>1. 手动添加课程计划</h3>
-            <p>课程名称（如“五年级数学第1章”）：</p>
+            <p>课程名称（如"五年级数学第1章"）：</p>
             <input type="text" id="planName" placeholder="必填：输入课程名" required>
             <p>开始学习日期：</p>
             <input type="date" id="startDate" required>
@@ -125,7 +125,7 @@
                 return;
             }
 
-            // 解析单词（仅存英文+中文，初始状态为“未复习”，存本地）
+            // 解析单词（仅存英文+中文，初始状态为"未复习"，存本地）
             const words = [];
             if (wordInput) {
                 wordInput.split('\n').forEach(line => {
@@ -297,3 +297,125 @@
                 });
 
                 txtContent += `\n=== 单词列表（仅基础信息） ===\n`;
+                if (plan.words.length > 0) {
+                    plan.words.forEach(word => {
+                        txtContent += `${word.eng} ${word.cn}\n`;
+                    });
+                } else {
+                    txtContent += `本课程未添加单词\n`;
+                }
+
+                // 生成TXT文件并下载
+                const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${plan.name}_复习计划.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+
+            // 关闭弹窗并提示
+            closeExportModal();
+            alert(`已成功导出${selectedPlanIds.length}个课程的TXT文件！`);
+        }
+
+        // 辅助：关闭导出弹窗
+        function closeExportModal() {
+            document.getElementById("exportSelectModal").style.display = "none";
+        }
+
+        // 6. 辅助功能：加载未过期的计划（动态数据）
+        function loadActivePlans() {
+            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+            // 筛选未过期的计划（最后一次复习日期 >= 今天）
+            const activePlans = allPlans.filter(plan => {
+                const lastReviewDate = new Date(plan.reviews[plan.reviews.length - 1].date);
+                return lastReviewDate >= today;
+            });
+
+            // 更新今日复习列表
+            updateTodayReviewList(activePlans);
+
+            // 更新所有计划展示
+            const allPlansContainer = document.getElementById("allPlans");
+            allPlansContainer.innerHTML = "";
+            if (activePlans.length === 0) {
+                allPlansContainer.innerHTML = `<p class="no-today">暂无未过期的课程计划，可点击上方"添加计划"创建</p>`;
+                return;
+            }
+
+            activePlans.forEach(plan => {
+                const planItem = document.createElement("div");
+                planItem.className = "plan-item";
+
+                // 构建复习安排HTML
+                let reviewHtml = "";
+                plan.reviews.forEach(review => {
+                    const isToday = review.date === todayStr;
+                    const isPast = new Date(review.date) < today;
+                    let statusClass = "";
+                    if (isToday) statusClass = "style='color:#e67e22;font-weight:bold'";
+                    if (isPast) statusClass = "style='color:#6c757d;text-decoration:line-through'";
+                    reviewHtml += `<div class="review-day"><span ${statusClass}>第${review.times}次：${review.date}</span>（间隔${review.interval}天）</div>`;
+                });
+
+                // 构建单词状态HTML
+                let wordStatusHtml = "";
+                if (plan.words.length > 0) {
+                    const masteredCount = plan.words.filter(w => w.isMastered === true).length;
+                    const unmasteredCount = plan.words.filter(w => w.isMastered === false).length;
+                    wordStatusHtml = `
+                        <div class="tip">
+                            单词总数：${plan.words.length} | 
+                            已掌握：<span class="mastered">${masteredCount}</span> | 
+                            未掌握：<span class="unmastered">${unmasteredCount}</span>
+                        </div>
+                        <button onclick="startWordReview(${plan.id})" style="margin-top:8px;">开始单词复习</button>
+                    `;
+                } else {
+                    wordStatusHtml = `<div class="tip">本课程未添加单词</div>`;
+                }
+
+                // 拼接计划HTML
+                planItem.innerHTML = `
+                    <div class="title">📚 ${plan.name}（开始日期：${plan.startDate}）</div>
+                    <div>${reviewHtml}</div>
+                    ${wordStatusHtml}
+                `;
+                allPlansContainer.appendChild(planItem);
+            });
+        }
+
+        // 辅助：更新今日复习列表
+        function updateTodayReviewList(activePlans) {
+            const todayReviewList = document.getElementById("todayReviewList");
+            const todayPlans = activePlans.filter(plan => 
+                plan.reviews.some(review => review.date === todayStr)
+            );
+
+            if (todayPlans.length === 0) {
+                todayReviewList.innerHTML = "今日暂无复习任务，好好休息吧！";
+                todayReviewList.className = "no-today";
+                return;
+            }
+
+            todayReviewList.className = "";
+            let todayHtml = "";
+            todayPlans.forEach(plan => {
+                todayHtml += `<div class="today-item">• ${plan.name}（第${plan.reviews.find(r => r.date === todayStr).times}次复习）</div>`;
+            });
+            todayReviewList.innerHTML = todayHtml;
+        }
+
+        // 辅助：清空输入框
+        function clearInput() {
+            document.getElementById("planName").value = "";
+            document.getElementById("startDate").value = "";
+            document.getElementById("wordInput").value = "";
+        }
+    </script>
+</body>
+</html>
