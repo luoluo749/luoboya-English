@@ -12,16 +12,15 @@
         .today-item { color: #721c24; margin: 5px 0; font-size: 15px; }
         .no-today { color: #6c757d; font-size: 14px; }
         .input-area { margin: 20px 0; padding: 15px; background: #fef5e7; border-radius: 8px; }
-        input, textarea { padding: 10px; margin: 10px 5px; border: 2px solid #e67e22; border-radius: 5px; box-sizing: border-box; }
-        #planName { width: 300px; }
-        #startDate { width: 200px; }
-        #wordInput { width: 500px; height: 100px; resize: none; }
+        select, textarea { padding: 10px; margin: 10px 5px; border: 2px solid #e67e22; border-radius: 5px; box-sizing: border-box; }
+        #courseFileSelect { width: 350px; }
         button { padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 5px; transition: background 0.3s; }
         button:hover { background: #d35400; }
         .plan-item { margin: 15px 0; padding: 15px; background: #fef5e7; border-radius: 8px; border-left: 4px solid #e67e22; }
         .review-day { margin: 6px 0; color: #333; font-size: 14px; }
         .title { color: #e67e22; font-weight: bold; margin-bottom: 10px; font-size: 16px; }
         .tip { color: #666; font-size: 13px; margin-top: 10px; }
+        .file-tip { color: #999; font-size: 12px; margin: 5px 0 0 8px; }
     </style>
 </head>
 <body>
@@ -31,40 +30,39 @@
         <!-- 今日复习区 -->
         <div class="today-review">
             <div class="today-title">📅 今天（<span id="localToday"></span>）要复习的内容：</div>
-            <div id="todayReviewList" class="no-today">正在加载复习计划...</div>
+            <div id="todayReviewList" class="no-today">正在加载课程计划...</div>
         </div>
 
-        <!-- 核心操作区 -->
+        <!-- 核心操作区（改为选择服务器课程文件） -->
         <div class="input-area">
-            <h3>1. 添加新课程计划</h3>
-            <p>课程名称（如"五年级数学第1章"）：</p>
-            <input type="text" id="planName" placeholder="必填：输入课程名" required>
-            <p>开始学习日期：</p>
-            <input type="date" id="startDate" required>
-            <p>单词（每行1组：英文+空格+中文，无则不填）：</p>
-            <textarea id="wordInput" placeholder="示例：apple 苹果&#10;banana 香蕉"></textarea>
+            <h3>1. 加载服务器课程文件</h3>
+            <p>选择课程文件（来自 ./course/ 目录）：</p>
+            <select id="courseFileSelect" required>
+                <option value="">-- 请先加载课程文件列表 --</option>
+            </select>
+            <button onclick="loadCourseFiles()">加载服务器课程列表</button>
+            <p class="file-tip">提示：服务器 ./course/ 目录下的TXT文件需按格式编写：第1行课程名，第2行开始日期（YYYY-MM-DD），第3行起为单词（英文 中文）</p>
             <br>
-            <button onclick="addNewPlan()">添加计划</button>
-
-            <h3 style="margin-top: 20px;">2. 导出功能</h3>
-            <button onclick="exportAllPlans()">导出全部计划为TXT</button>
+            <button onclick="loadSelectedCourse()" disabled>加载选中课程</button>
         </div>
 
-        <!-- 课程计划展示区 -->
+        <!-- 课程计划展示区（含单课程导出按钮） -->
         <div id="allPlans"></div>
     </div>
 
     <script>
-        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（从开始日算起的天数）
-        const PLAN_KEY = "reviewPlans";
+        const reviewIntervals = [1, 2, 3, 5, 7, 9, 12, 14, 17, 21]; // 10次复习间隔（从开始日算起）
+        const SERVER_COURSE_DIR = "./course/"; // 服务器课程文件根目录
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayStr = getLocalDateStr(today);
+        let currentCourses = []; // 存储当前加载的课程列表
 
-        // 页面加载时显示今日日期并加载计划
+        // 页面加载时显示今日日期
         window.onload = () => {
             document.getElementById('localToday').textContent = todayStr;
-            loadAllPlans();
+            // 初始加载服务器课程列表
+            loadCourseFiles();
         };
 
         // 日期格式化工具
@@ -75,84 +73,144 @@
             return `${year}-${month}-${day}`;
         }
 
-        // 添加新课程计划
-        function addNewPlan() {
-            const planName = document.getElementById("planName").value.trim();
-            const startDate = document.getElementById("startDate").value;
-            const wordInput = document.getElementById("wordInput").value.trim();
+        /**
+         * 加载服务器 ./course/ 目录下的所有TXT文件列表
+         * 注：需后端配合返回文件列表（此处模拟逻辑，实际需后端接口支持）
+         */
+        function loadCourseFiles() {
+            const selectElement = document.getElementById("courseFileSelect");
+            const loadBtn = document.querySelector("button[onclick='loadSelectedCourse()']");
+            
+            // 实际项目中，需替换为后端接口请求（如 /api/getCourseFiles）
+            // 此处模拟获取服务器TXT文件列表（示例文件名）
+            fetch(SERVER_COURSE_DIR + "fileList.json") // 假设后端提供文件列表JSON
+                .then(res => {
+                    if (!res.ok) throw new Error("无法获取课程文件列表");
+                    return res.json();
+                })
+                .then(fileList => {
+                    // 过滤出TXT文件
+                    const txtFiles = fileList.filter(file => file.endsWith(".txt"));
+                    if (txtFiles.length === 0) {
+                        selectElement.innerHTML = "<option value=''>-- 服务器目录下无TXT课程文件 --</option>";
+                        loadBtn.disabled = true;
+                        return;
+                    }
 
-            if (!planName || !startDate) {
-                alert("课程名和开始日期不能为空！");
+                    // 填充下拉框
+                    selectElement.innerHTML = "<option value=''>-- 请选择课程文件 --</option>";
+                    txtFiles.forEach(file => {
+                        const option = document.createElement("option");
+                        option.value = file;
+                        option.textContent = file.replace(".txt", ""); // 显示时去掉后缀
+                        selectElement.appendChild(option);
+                    });
+                    loadBtn.disabled = false;
+                })
+                .catch(err => {
+                    selectElement.innerHTML = `<option value=''>-- 加载失败：${err.message} --</option>`;
+                    loadBtn.disabled = true;
+                    alert("加载课程列表失败：" + err.message);
+                });
+        }
+
+        /**
+         * 加载选中的服务器课程文件（解析TXT内容）
+         */
+        function loadSelectedCourse() {
+            const selectElement = document.getElementById("courseFileSelect");
+            const selectedFile = selectElement.value;
+            if (!selectedFile) {
+                alert("请先选择一个课程文件！");
                 return;
             }
 
-            // 解析单词
-            const words = [];
-            if (wordInput) {
-                wordInput.split('\n').forEach(line => {
-                    line = line.trim();
-                    if (!line) return;
-                    const [eng, ...cnParts] = line.split(' ');
-                    const cn = cnParts.join(' ').trim();
-                    if (eng && cn) {
-                        words.push({ eng, cn });
-                    }
-                });
-            }
-
-            // 生成10次复习日期 - 修复版逻辑
-            const startDateObj = new Date(startDate);
-            startDateObj.setHours(0, 0, 0, 0);
-
-            const newPlan = {
-                id: Date.now(),
-                name: planName,
-                startDate: startDate,
-                words: words,
-                reviews: reviewIntervals.map((daysFromStart, i) => {
-                    const reviewDate = new Date(startDateObj);
-                    reviewDate.setDate(reviewDate.getDate() + daysFromStart); // 直接在开始日期上加天数
-                    return {
-                        times: i + 1,
-                        date: getLocalDateStr(reviewDate),
-                        interval: daysFromStart
-                    };
+            // 请求服务器上的TXT课程文件
+            fetch(SERVER_COURSE_DIR + selectedFile)
+                .then(res => {
+                    if (!res.ok) throw new Error("文件不存在或无法访问");
+                    return res.text();
                 })
-            };
+                .then(txtContent => {
+                    // 解析TXT内容（按约定格式：第1行课程名，第2行开始日期，第3行起单词）
+                    const lines = txtContent.split('\n').map(line => line.trim()).filter(line => line);
+                    if (lines.length < 2) {
+                        throw new Error("文件格式错误：至少需包含课程名和开始日期");
+                    }
 
-            // 保存到本地存储
-            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
-            allPlans.push(newPlan);
-            localStorage.setItem(PLAN_KEY, JSON.stringify(allPlans));
+                    const courseName = lines[0];
+                    const startDate = lines[1];
+                    // 验证开始日期格式
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+                        throw new Error("开始日期格式错误：需为 YYYY-MM-DD（如 2024-10-06）");
+                    }
 
-            // 刷新页面显示
-            loadAllPlans();
-            clearInput();
-            alert(`"${planName}"计划添加成功！已在下方显示。`);
+                    // 解析单词（第3行起）
+                    const words = [];
+                    for (let i = 2; i < lines.length; i++) {
+                        const [eng, ...cnParts] = lines[i].split(' ');
+                        const cn = cnParts.join(' ').trim();
+                        if (eng && cn) {
+                            words.push({ eng, cn });
+                        }
+                    }
+
+                    // 生成课程计划
+                    const startDateObj = new Date(startDate);
+                    startDateObj.setHours(0, 0, 0, 0);
+                    const newCourse = {
+                        id: Date.now(),
+                        fileName: selectedFile,
+                        name: courseName,
+                        startDate: startDate,
+                        words: words,
+                        reviews: reviewIntervals.map((daysFromStart, i) => {
+                            const reviewDate = new Date(startDateObj);
+                            reviewDate.setDate(reviewDate.getDate() + daysFromStart);
+                            return {
+                                times: i + 1,
+                                date: getLocalDateStr(reviewDate),
+                                interval: daysFromStart
+                            };
+                        })
+                    };
+
+                    // 更新当前课程列表（去重：同一文件不重复加载）
+                    currentCourses = currentCourses.filter(course => course.fileName !== selectedFile);
+                    currentCourses.push(newCourse);
+                    // 刷新页面显示
+                    renderCoursePlans();
+                    alert(`成功加载课程：${courseName}`);
+                })
+                .catch(err => {
+                    alert("加载课程失败：" + err.message);
+                });
         }
 
-        // 加载并显示所有计划
-        function loadAllPlans() {
-            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
+        /**
+         * 渲染课程计划（含单课程导出按钮）
+         */
+        function renderCoursePlans() {
             const allPlansContainer = document.getElementById("allPlans");
             allPlansContainer.innerHTML = "";
 
-            if (allPlans.length === 0) {
-                allPlansContainer.innerHTML = `<p class="no-today">暂无课程计划，可点击上方"添加计划"创建</p>`;
-                updateTodayReviewList([]);
+            if (currentCourses.length === 0) {
+                allPlansContainer.innerHTML = `<p class="no-today">暂无加载的课程计划，请选择并加载服务器课程文件</p>`;
+                updateTodayReviewList();
                 return;
             }
 
             // 更新今日复习列表
-            updateTodayReviewList(allPlans);
+            updateTodayReviewList();
 
-            // 显示所有计划
-            allPlans.forEach(plan => {
+            // 渲染每个课程计划（新增「导出本课程」按钮）
+            currentCourses.forEach(course => {
                 const planItem = document.createElement("div");
                 planItem.className = "plan-item";
 
+                // 渲染复习日期（标记今日/已过期）
                 let reviewHtml = "";
-                plan.reviews.forEach(review => {
+                course.reviews.forEach(review => {
                     const isToday = review.date === todayStr;
                     const isPast = new Date(review.date) < today;
                     let statusStyle = "";
@@ -161,30 +219,80 @@
                     reviewHtml += `<div class="review-day"><span style="${statusStyle}">第${review.times}次：${review.date}</span>（距开始第${review.interval}天）</div>`;
                 });
 
-                let wordInfo = "";
-                if (plan.words.length > 0) {
-                    wordInfo = `<div class="tip">单词总数：${plan.words.length} 个</div>`;
+                // 渲染单词信息
+                let wordHtml = "";
+                if (course.words.length > 0) {
+                    wordHtml = `<div class="tip">单词列表（共${course.words.length}个）：<br>${course.words.map(w => `• ${w.eng} - ${w.cn}`).join('<br>')}</div>`;
                 } else {
-                    wordInfo = `<div class="tip">本课程未添加单词</div>`;
+                    wordHtml = `<div class="tip">本课程未添加单词</div>`;
                 }
 
+                // 新增「导出本课程」按钮
                 planItem.innerHTML = `
-                    <div class="title">📚 ${plan.name}（开始日期：${plan.startDate}）</div>
+                    <div class="title">📚 ${course.name}（文件：${course.fileName} | 开始日期：${course.startDate}）</div>
                     <div>${reviewHtml}</div>
-                    ${wordInfo}
+                    ${wordHtml}
+                    <button onclick="exportSingleCourse(${course.id})" style="margin-top:10px;">导出本课程计划</button>
                 `;
                 allPlansContainer.appendChild(planItem);
             });
         }
 
-        // 更新今日复习列表
-        function updateTodayReviewList(allPlans) {
+        /**
+         * 单课程导出（仅导出选中的单个课程）
+         */
+        function exportSingleCourse(courseId) {
+            const course = currentCourses.find(c => c.id === courseId);
+            if (!course) {
+                alert("未找到该课程，无法导出！");
+                return;
+            }
+
+            // 构建导出内容
+            let txtContent = `=== 艾宾浩斯复习计划 - ${course.name} ===\n`;
+            txtContent += `课程文件：${course.fileName}\n`;
+            txtContent += `开始日期：${course.startDate}\n`;
+            txtContent += `导出日期：${new Date().toLocaleDateString()}\n\n`;
+
+            txtContent += `10次复习安排：\n`;
+            course.reviews.forEach(review => {
+                txtContent += `  第${review.times}次：${review.date}（距开始第${review.interval}天）\n`;
+            });
+
+            if (course.words.length > 0) {
+                txtContent += `\n单词列表：\n`;
+                course.words.forEach(word => {
+                    txtContent += `  ${word.eng} ${word.cn}\n`;
+                });
+            } else {
+                txtContent += `\n单词列表：无\n`;
+            }
+
+            // 下载TXT文件
+            const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const exportFileName = `${course.name}_复习计划_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
+            a.href = url;
+            a.download = exportFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            alert(`已成功导出课程：《${course.name}》`);
+        }
+
+        /**
+         * 更新今日复习列表
+         */
+        function updateTodayReviewList() {
             const todayReviewList = document.getElementById("todayReviewList");
-            const todayPlans = allPlans.filter(plan => 
-                plan.reviews.some(review => review.date === todayStr)
+            const todayCourses = currentCourses.filter(course => 
+                course.reviews.some(review => review.date === todayStr)
             );
 
-            if (todayPlans.length === 0) {
+            if (todayCourses.length === 0) {
                 todayReviewList.innerHTML = "今日暂无复习任务，好好休息吧！";
                 todayReviewList.className = "no-today";
                 return;
@@ -192,64 +300,11 @@
 
             todayReviewList.className = "";
             let todayHtml = "";
-            todayPlans.forEach(plan => {
-                todayHtml += `<div class="today-item">• ${plan.name}（第${plan.reviews.find(r => r.date === todayStr).times}次复习）</div>`;
+            todayCourses.forEach(course => {
+                const reviewTimes = course.reviews.find(r => r.date === todayStr).times;
+                todayHtml += `<div class="today-item">• ${course.name}（第${reviewTimes}次复习）</div>`;
             });
             todayReviewList.innerHTML = todayHtml;
-        }
-
-        // 导出全部计划为TXT
-        function exportAllPlans() {
-            const allPlans = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
-            if (allPlans.length === 0) {
-                alert("没有可导出的计划！");
-                return;
-            }
-
-            let txtContent = `=== 艾宾浩斯复习计划汇总 ===\n`;
-            txtContent += `导出日期：${new Date().toLocaleDateString()}\n`;
-            txtContent += `总课程数：${allPlans.length}\n\n`;
-
-            allPlans.forEach(plan => {
-                txtContent += `=== ${plan.name} ===\n`;
-                txtContent += `开始日期：${plan.startDate}\n`;
-                txtContent += `复习次数：10次\n\n`;
-
-                txtContent += `10次复习安排：\n`;
-                plan.reviews.forEach(review => {
-                    txtContent += `  第${review.times}次：${review.date}（距开始第${review.interval}天）\n`;
-                });
-
-                if (plan.words.length > 0) {
-                    txtContent += `\n单词列表：\n`;
-                    plan.words.forEach(word => {
-                        txtContent += `  ${word.eng} ${word.cn}\n`;
-                    });
-                } else {
-                    txtContent += `\n单词列表：无\n`;
-                }
-                txtContent += `\n`;
-            });
-
-            // 下载TXT文件
-            const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `艾宾浩斯复习计划汇总_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            alert("所有计划已成功导出为TXT文件！");
-        }
-
-        // 清空输入框
-        function clearInput() {
-            document.getElementById("planName").value = "";
-            document.getElementById("startDate").value = "";
-            document.getElementById("wordInput").value = "";
         }
     </script>
 </body>
